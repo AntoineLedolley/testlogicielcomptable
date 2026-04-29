@@ -1,0 +1,339 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ORGANISATION & UTILISATEURS
+// ─────────────────────────────────────────────
+
+model Organisation {
+  id        String   @id @default(cuid())
+  nom       String
+  siret     String?
+  adresse   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  immeubles  Immeuble[]
+  fournisseurs Fournisseur[]
+  comptes    Compte[]
+  users      User[]
+  journaux   Journal[]
+}
+
+model User {
+  id             String       @id @default(cuid())
+  clerkId        String       @unique
+  email          String       @unique
+  nom            String
+  prenom         String
+  role           Role         @default(COMPTABLE)
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  ecrituresCreees EcritureComptable[]
+  facturesValidees Facture[]
+}
+
+enum Role {
+  ADMIN
+  COMPTABLE
+  AUDITEUR
+}
+
+// ─────────────────────────────────────────────
+// PATRIMOINE IMMOBILIER
+// ─────────────────────────────────────────────
+
+model Immeuble {
+  id             String       @id @default(cuid())
+  nom            String
+  adresse        String
+  ville          String
+  codePostal     String
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  lots     Lot[]
+  factures Facture[]
+}
+
+model Lot {
+  id          String   @id @default(cuid())
+  numero      String
+  type        TypeLot
+  surface     Float?
+  etage       Int?
+  immeubleId  String
+  immeuble    Immeuble @relation(fields: [immeubleId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  baux        Bail[]
+}
+
+enum TypeLot {
+  APPARTEMENT
+  COMMERCE
+  PARKING
+  BUREAU
+  CAVE
+}
+
+model Locataire {
+  id        String   @id @default(cuid())
+  nom       String
+  prenom    String?
+  email     String?
+  telephone String?
+  siret     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  baux      Bail[]
+}
+
+model Bail {
+  id            String        @id @default(cuid())
+  lotId         String
+  lot           Lot           @relation(fields: [lotId], references: [id])
+  locataireId   String
+  locataire     Locataire     @relation(fields: [locataireId], references: [id])
+  dateDebut     DateTime
+  dateFin       DateTime?
+  loyerHC       Float
+  charges       Float         @default(0)
+  depot         Float         @default(0)
+  periodicite   Periodicite   @default(MENSUEL)
+  statut        StatutBail    @default(ACTIF)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  appelsLoyer   AppelLoyer[]
+}
+
+enum Periodicite {
+  MENSUEL
+  TRIMESTRIEL
+  ANNUEL
+}
+
+enum StatutBail {
+  ACTIF
+  RESILIE
+  EXPIRE
+}
+
+// ─────────────────────────────────────────────
+// COMPTABILITÉ
+// ─────────────────────────────────────────────
+
+model Compte {
+  id             String       @id @default(cuid())
+  numero         String
+  libelle        String
+  classe         Int
+  type           TypeCompte
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  createdAt      DateTime     @default(now())
+
+  lignesDebit    LigneEcriture[] @relation("CompteDebit")
+  lignesCredit   LigneEcriture[] @relation("CompteCredit")
+
+  @@unique([numero, organisationId])
+}
+
+enum TypeCompte {
+  ACTIF
+  PASSIF
+  CHARGE
+  PRODUIT
+}
+
+model Journal {
+  id             String       @id @default(cuid())
+  code           String
+  libelle        String
+  type           TypeJournal
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+
+  ecritures      EcritureComptable[]
+
+  @@unique([code, organisationId])
+}
+
+enum TypeJournal {
+  ACHATS
+  VENTES
+  BANQUE
+  OD
+  TRESORERIE
+}
+
+model EcritureComptable {
+  id             String        @id @default(cuid())
+  journalId      String
+  journal        Journal       @relation(fields: [journalId], references: [id])
+  date           DateTime
+  libelle        String
+  reference      String?
+  statut         StatutEcriture @default(BROUILLON)
+  userId         String?
+  user           User?         @relation(fields: [userId], references: [id])
+  factureId      String?       @unique
+  facture        Facture?      @relation(fields: [factureId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  lignes         LigneEcriture[]
+}
+
+enum StatutEcriture {
+  BROUILLON
+  VALIDEE
+  LETTREE
+}
+
+model LigneEcriture {
+  id          String            @id @default(cuid())
+  ecritureId  String
+  ecriture    EcritureComptable @relation(fields: [ecritureId], references: [id], onDelete: Cascade)
+  compteDebitId  String?
+  compteDebit    Compte?        @relation("CompteDebit", fields: [compteDebitId], references: [id])
+  compteCreditId String?
+  compteCredit   Compte?        @relation("CompteCredit", fields: [compteCreditId], references: [id])
+  montant     Float
+  libelle     String?
+}
+
+// ─────────────────────────────────────────────
+// FACTURES & FOURNISSEURS
+// ─────────────────────────────────────────────
+
+model Fournisseur {
+  id             String       @id @default(cuid())
+  nom            String
+  siret          String?
+  tva            String?
+  adresse        String?
+  email          String?
+  telephone      String?
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  factures       Facture[]
+}
+
+model Facture {
+  id              String         @id @default(cuid())
+  numero          String?
+  fournisseurId   String?
+  fournisseur     Fournisseur?   @relation(fields: [fournisseurId], references: [id])
+  immeubleId      String?
+  immeuble        Immeuble?      @relation(fields: [immeubleId], references: [id])
+  dateFacture     DateTime?
+  dateEcheance    DateTime?
+  montantHT       Float?
+  montantTVA      Float?
+  montantTTC      Float?
+  tauxTVA         Float?
+  devise          String         @default("EUR")
+  statut          StatutFacture  @default(EN_ATTENTE)
+  fichierUrl      String?
+  fichierNom      String?
+  donneesIA       Json?
+  valideeParId    String?
+  valideePar      User?          @relation(fields: [valideeParId], references: [id])
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  ecriture        EcritureComptable?
+}
+
+enum StatutFacture {
+  EN_ATTENTE
+  EN_COURS_IA
+  A_VALIDER
+  VALIDEE
+  COMPTABILISEE
+  REJETEE
+}
+
+// ─────────────────────────────────────────────
+// LOYERS & APPELS DE FONDS
+// ─────────────────────────────────────────────
+
+model AppelLoyer {
+  id          String          @id @default(cuid())
+  bailId      String
+  bail        Bail            @relation(fields: [bailId], references: [id])
+  periode     String
+  montantHC   Float
+  charges     Float           @default(0)
+  montantTotal Float
+  dateEcheance DateTime
+  datePaiement DateTime?
+  statut      StatutLoyer     @default(EN_ATTENTE)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+enum StatutLoyer {
+  EN_ATTENTE
+  ENCAISSE
+  RETARD
+  IMPAYE
+}
+
+// ─────────────────────────────────────────────
+// RAPPROCHEMENT BANCAIRE
+// ─────────────────────────────────────────────
+
+model CompteBancaire {
+  id          String   @id @default(cuid())
+  banque      String
+  iban        String   @unique
+  libelle     String
+  solde       Float    @default(0)
+  createdAt   DateTime @default(now())
+
+  transactions TransactionBancaire[]
+}
+
+model TransactionBancaire {
+  id                String          @id @default(cuid())
+  compteBancaireId  String
+  compteBancaire    CompteBancaire  @relation(fields: [compteBancaireId], references: [id])
+  date              DateTime
+  libelle           String
+  montant           Float
+  type              TypeTransaction
+  reference         String?
+  rapprocheeId      String?
+  statut            StatutRappro    @default(NON_RAPPROCHEE)
+  createdAt         DateTime        @default(now())
+}
+
+enum TypeTransaction {
+  DEBIT
+  CREDIT
+}
+
+enum StatutRappro {
+  NON_RAPPROCHEE
+  RAPPROCHEE
+  IGNOREE
+}
